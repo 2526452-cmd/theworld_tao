@@ -234,6 +234,7 @@
             <button class="btn-plague" id="btn-f" onclick="triggerDisaster('PLAGUE')"><span class="hotkey">F</span> 執行瘟疫</button>
             <button class="btn-weapon" id="btn-g" onclick="spawnWeapons()"><span class="hotkey">G</span> 生成武器</button>
             <button class="btn-speed" id="btn-p" onclick="toggleSpeed()"><span class="hotkey">P</span> 速度: 1x</button>
+            <button id="btn-r" onclick="resetGame()"><span class="hotkey">R</span> 重設遊戲</button>
         </div>
         <div class="controls">
             <button class="btn-boss" id="btn-z" onclick="spawnBoss('CHAIN_DRAGON')"><span class="hotkey">Z</span> 召喚鎖刃龍</button>
@@ -332,6 +333,7 @@
                 case 'v': toggleBerserk(); buttonId = 'btn-v'; break;
                 case 'x': toggleAudio(); buttonId = 'btn-x'; break;
                 case 'p': toggleSpeed(); buttonId = 'btn-p'; break;
+                case 'r': resetGame(); buttonId = 'btn-r'; break;
             }
 
             if (buttonId) {
@@ -431,6 +433,31 @@
             clearInterval(worldInterval); if (!extinctionInProgress) worldInterval = setInterval(worldTick, currentTickRate);
             const btn = document.getElementById('btn-p'); btn.innerHTML = `<span class="hotkey">P</span> 速度: ${currentSpeed}x`;
             if (currentSpeed > 1) btn.classList.add('fast'); else btn.classList.remove('fast');
+        }
+
+        function resetGame() {
+            clearInterval(worldInterval);
+            WORLD_WIDTH = 35; WORLD_HEIGHT = 18; MAX_BUILDINGS_PER_RACE = 2;
+            currentSpeed = 1; currentTickRate = BASE_TICK_RATE;
+            isPlagueActive = false; plagueCapacity = 0; isBerserkMode = false;
+            currentWeather = 'NONE'; weatherTimer = 0; loveTimer = 0;
+            worldEverHadLife = false; extinctionInProgress = false;
+            entities = []; buildings = []; items = []; rivers = []; effects = []; activeNations = {};
+            logs = [];
+            document.getElementById('love-overlay').style.display = 'none';
+            document.getElementById('extinction-overlay').style.display = 'none';
+            document.getElementById('extinction-overlay').style.opacity = '0';
+            document.getElementById('scream-overlay').style.animation = 'none';
+            document.getElementById('custom-modal-overlay').style.display = 'none';
+            document.getElementById('btn-p').innerHTML = `<span class="hotkey">P</span> 速度: 1x`;
+            document.getElementById('btn-p').classList.remove('fast');
+            document.getElementById('btn-v').classList.remove('berserk-on');
+            document.getElementById('btn-v').innerHTML = `<span class="hotkey">V</span> 狂暴: 關閉`;
+            buildGrid(); drawWorld(); updateStats();
+            document.getElementById('log').innerHTML = '';
+            addLog('系統', '遊戲已重設。新的冒險開始了！', '#aaaaaa');
+            worldInterval = setInterval(worldTick, currentTickRate);
+            if (isAudioEnabled) playBGM();
         }
 
         let audioCtx; let isAudioEnabled = true; let audioInitialized = false; let bgmInterval; let bgmNoteIndex = 0; let noiseBuffer = null;
