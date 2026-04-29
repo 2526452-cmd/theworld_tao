@@ -174,6 +174,9 @@
         .form-group input[type="color"] { padding: 0; width: 60px; height: 26px; cursor: pointer; }
         .form-group input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
         .modal-buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        .diary-input { flex: 1; min-width: 220px; max-width: 42rem; background: #111; border: 1px solid #555; color: #fff; padding: 6px 10px; font-size: 14px; margin-right: 5px; }
+        #diary-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; padding: 5px 0; max-height: 110px; overflow-y: auto; color: #ddd; font-size: 13px; }
+        .diary-entry { padding: 6px 8px; background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 3px; }
         .btn-submit { background: #330033; border: 1px solid var(--custom-color); color: #fff; cursor: pointer;}
         .btn-cancel { background: #333; border: 1px solid #666; color: #ccc; cursor: pointer;}
 
@@ -212,6 +215,15 @@
         <span id="stat-size" style="color: var(--expand-color); margin-left: auto;">地圖: 35x18</span>
     </div>
 
+    <div id="diary-panel" class="control-panel">
+        <div class="controls">
+            <input id="diary-input" class="diary-input" type="text" placeholder="寫下一句短日記..." maxlength="60">
+            <button onclick="addDiaryEntry()"><span class="hotkey">Y</span> 寫日記</button>
+            <button onclick="clearDiary()"><span class="hotkey">K</span> 清除日記</button>
+        </div>
+        <div id="diary-list"></div>
+    </div>
+
     <div id="log-container">
         <div id="log"></div>
     </div>
@@ -235,6 +247,11 @@
             <button class="btn-weapon" id="btn-g" onclick="spawnWeapons()"><span class="hotkey">G</span> 生成武器</button>
             <button class="btn-speed" id="btn-p" onclick="toggleSpeed()"><span class="hotkey">P</span> 速度: 1x</button>
             <button id="btn-r" onclick="resetGame()"><span class="hotkey">R</span> 重設遊戲</button>
+        </div>
+        <div class="controls">
+            <button id="btn-save" onclick="saveGame()"><span class="hotkey">S</span> 存檔</button>
+            <button id="btn-load" onclick="loadGame()"><span class="hotkey">L</span> 讀取存檔</button>
+            <button id="btn-clear-save" onclick="clearSave()"><span class="hotkey">C</span> 刪除存檔</button>
         </div>
         <div class="controls">
             <button class="btn-boss" id="btn-z" onclick="spawnBoss('CHAIN_DRAGON')"><span class="hotkey">Z</span> 召喚鎖刃龍</button>
@@ -460,6 +477,111 @@
             if (isAudioEnabled) playBGM();
         }
 
+        function getSaveKey() { return 'theworld_tao_save'; }
+        function getDiaryKey() { return 'theworld_tao_diary'; }
+
+        function saveGame() {
+            const saveData = {
+                WORLD_WIDTH, WORLD_HEIGHT, MAX_BUILDINGS_PER_RACE,
+                currentSpeed, currentTickRate,
+                isPlagueActive, plagueCapacity, isBerserkMode,
+                currentWeather, weatherTimer, loveTimer,
+                worldEverHadLife, extinctionInProgress,
+                entities, buildings, items, rivers, activeNations,
+                isAudioEnabled
+            };
+            localStorage.setItem(getSaveKey(), JSON.stringify(saveData));
+            addLog('存檔', '遊戲已存檔，可以稍後讀取。', '#88cc88');
+        }
+
+        function loadGame() {
+            const raw = localStorage.getItem(getSaveKey());
+            if (!raw) { addLog('系統', '找不到存檔。請先進行存檔。', '#ffcc88'); return; }
+            try {
+                const data = JSON.parse(raw);
+                clearInterval(worldInterval);
+                WORLD_WIDTH = data.WORLD_WIDTH || 35;
+                WORLD_HEIGHT = data.WORLD_HEIGHT || 18;
+                MAX_BUILDINGS_PER_RACE = data.MAX_BUILDINGS_PER_RACE || 2;
+                currentSpeed = data.currentSpeed || 1;
+                currentTickRate = data.currentTickRate || BASE_TICK_RATE / currentSpeed;
+                isPlagueActive = !!data.isPlagueActive;
+                plagueCapacity = data.plagueCapacity || 0;
+                isBerserkMode = !!data.isBerserkMode;
+                currentWeather = data.currentWeather || 'NONE';
+                weatherTimer = data.weatherTimer || 0;
+                loveTimer = data.loveTimer || 0;
+                worldEverHadLife = !!data.worldEverHadLife;
+                extinctionInProgress = !!data.extinctionInProgress;
+                entities = data.entities || [];
+                buildings = data.buildings || [];
+                items = data.items || [];
+                rivers = data.rivers || [];
+                activeNations = data.activeNations || {};
+                isAudioEnabled = data.isAudioEnabled !== false;
+
+                document.getElementById('love-overlay').style.display = loveTimer > 0 ? 'block' : 'none';
+                document.getElementById('extinction-overlay').style.display = 'none';
+                document.getElementById('extinction-overlay').style.opacity = '0';
+                document.getElementById('scream-overlay').style.animation = 'none';
+                document.getElementById('custom-modal-overlay').style.display = 'none';
+                document.getElementById('btn-p').innerHTML = `<span class="hotkey">P</span> 速度: ${currentSpeed}x`;
+                document.getElementById('btn-p').classList.toggle('fast', currentSpeed > 1);
+                document.getElementById('btn-v').classList.toggle('berserk-on', isBerserkMode);
+                document.getElementById('btn-v').innerHTML = `<span class="hotkey">V</span> 狂暴: ${isBerserkMode ? '開啟' : '關閉'}`;
+                document.getElementById('btn-x').innerHTML = `<span class="hotkey">X</span> 音效: ${isAudioEnabled ? '開啟' : '關閉'}`;
+                document.getElementById('btn-x').classList.toggle('audio-on', isAudioEnabled);
+
+                buildGrid(); drawWorld(); updateStats();
+                document.getElementById('log').innerHTML = '';
+                addLog('讀取', '已從存檔還原遊戲進度。', '#88cc88');
+                worldInterval = setInterval(worldTick, currentTickRate);
+                if (isAudioEnabled) playBGM(); else stopBGM();
+            } catch (error) {
+                addLog('錯誤', '讀取存檔時發生問題，請重新存檔。', '#ff4444');
+            }
+        }
+
+        function clearSave() {
+            localStorage.removeItem(getSaveKey());
+            addLog('存檔', '已刪除本地存檔。', '#ff8888');
+        }
+
+        function loadDiaryEntries() {
+            const raw = localStorage.getItem(getDiaryKey());
+            let entries = [];
+            try { entries = raw ? JSON.parse(raw) : []; } catch (e) { entries = []; }
+            const list = document.getElementById('diary-list');
+            list.innerHTML = '';
+            entries.slice().reverse().forEach(entry => {
+                const item = document.createElement('div');
+                item.className = 'diary-entry';
+                item.innerText = `${entry.time} ${entry.text}`;
+                list.appendChild(item);
+            });
+        }
+
+        function addDiaryEntry() {
+            const input = document.getElementById('diary-input');
+            const text = input.value.trim();
+            if (!text) return;
+            const raw = localStorage.getItem(getDiaryKey());
+            let entries = [];
+            try { entries = raw ? JSON.parse(raw) : []; } catch (e) { entries = []; }
+            entries.push({ time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }), text });
+            if (entries.length > 20) entries = entries.slice(entries.length - 20);
+            localStorage.setItem(getDiaryKey(), JSON.stringify(entries));
+            input.value = '';
+            loadDiaryEntries();
+            addLog('日記', '已儲存一則短日記。', '#aaccff');
+        }
+
+        function clearDiary() {
+            localStorage.removeItem(getDiaryKey());
+            loadDiaryEntries();
+            addLog('日記', '日記已清除。', '#ff8888');
+        }
+
         let audioCtx; let isAudioEnabled = true; let audioInitialized = false; let bgmInterval; let bgmNoteIndex = 0; let noiseBuffer = null;
         const bgmNotes = [110.00, 110.00, 146.83, 164.81, 110.00, 110.00, 98.00, 110.00]; 
 
@@ -513,7 +635,7 @@
             document.getElementById('stat-size').innerText = `地圖: ${WORLD_WIDTH}x${WORLD_HEIGHT}`;
         }
 
-        function initWorld() { buildGrid(); addLog("系統", "神聖的年代開始。生物數量達到一定規模將建立國家，並設立皇都。"); updateStats(); worldInterval = setInterval(worldTick, currentTickRate); }
+        function initWorld() { buildGrid(); addLog("系統", "神聖的年代開始。生物數量達到一定規模將建立國家，並設立皇都。"); updateStats(); worldInterval = setInterval(worldTick, currentTickRate); loadDiaryEntries(); }
 
         function expandMap() {
             const MAX_WORLD_WIDTH = 70; const MAX_WORLD_HEIGHT = 36;
