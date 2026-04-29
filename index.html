@@ -245,6 +245,7 @@
                 <option value="slot4">存檔槽 4</option>
                 <option value="slot5">存檔槽 5</option>
             </select>
+            <span id="save-slot-status" class="save-slot-status">尚未存檔</span>
             <button id="btn-save" onclick="saveGame()"><span class="hotkey">S</span> 存檔</button>
             <button id="btn-load" onclick="loadGame()"><span class="hotkey">L</span> 讀取存檔</button>
             <button id="btn-clear-save" onclick="clearSaveSlot()"><span class="hotkey">C</span> 刪除存檔</button>
@@ -482,8 +483,34 @@
 
         function refreshSaveButtons() {
             const raw = localStorage.getItem(getSaveKey());
-            document.getElementById('btn-load').disabled = !raw;
-            document.getElementById('btn-clear-save').disabled = !raw;
+            const loadBtn = document.getElementById('btn-load');
+            const clearBtn = document.getElementById('btn-clear-save');
+            const status = document.getElementById('save-slot-status');
+            let hasValidSave = false;
+            let statusText = '尚未存檔';
+            if (raw) {
+                try {
+                    const data = JSON.parse(raw);
+                    if (data) {
+                        if (data.savedAt) {
+                            const savedAt = new Date(data.savedAt);
+                            if (!isNaN(savedAt)) {
+                                statusText = `最後儲存: ${savedAt.toLocaleString('zh-TW', { hour12: false })}`;
+                                hasValidSave = true;
+                            }
+                        }
+                        if (!hasValidSave) {
+                            statusText = '找到舊存檔，可讀取。';
+                            hasValidSave = true;
+                        }
+                    }
+                } catch (error) {
+                    statusText = '存檔已損壞，請重新存檔或刪除。';
+                }
+            }
+            status.innerText = statusText;
+            loadBtn.disabled = !hasValidSave;
+            clearBtn.disabled = !raw;
         }
 
         function saveGame() {
@@ -494,7 +521,8 @@
                 currentWeather, weatherTimer, loveTimer,
                 worldEverHadLife, extinctionInProgress,
                 entities, buildings, items, rivers, activeNations,
-                isAudioEnabled
+                isAudioEnabled,
+                savedAt: new Date().toISOString()
             };
             localStorage.setItem(getSaveKey(), JSON.stringify(saveData));
             addLog('存檔', `已將進度存入 ${getSelectedSaveSlot()}。`, '#88cc88');
@@ -503,7 +531,11 @@
 
         function loadGame() {
             const raw = localStorage.getItem(getSaveKey());
-            if (!raw) { addLog('系統', `在 ${getSelectedSaveSlot()} 找不到存檔。請先存檔。`, '#ffcc88'); return; }
+            if (!raw) { addLog('系統', `在 ${getSelectedSaveSlot()} 找不到存檔，請先存檔。`, '#ffcc88'); return; }
+            if (entities.length > 0 || buildings.length > 0 || items.length > 0 || rivers.length > 0) {
+                const confirmed = confirm(`讀取 ${getSelectedSaveSlot()} 會覆蓋目前進度，確定要載入嗎？`);
+                if (!confirmed) return;
+            }
             try {
                 const data = JSON.parse(raw);
                 clearInterval(worldInterval);
@@ -555,8 +587,25 @@
             refreshSaveButtons();
         }
 
-        let audioCtx; let isAudioEnabled = true; let audioInitialized = false; let bgmInterval; let bgmNoteIndex = 0; let noiseBuffer = null;
-        const bgmNotes = [110.00, 110.00, 146.83, 164.81, 110.00, 110.00, 98.00, 110.00]; 
+        let audioCtx; let isAudioEnabled = true; let audioInitialized = false; let bgmInterval; let bgmStepIndex = 0; let noiseBuffer = null;
+        const BGM_PATTERN = [
+            { mel: 392.00, bass: 130.81 },
+            { mel: 440.00, bass: 130.81 },
+            { mel: 466.16, bass: 146.83 },
+            { mel: 392.00, bass: 130.81 },
+            { mel: 349.23, bass: 98.00 },
+            { mel: 330.00, bass: 98.00 },
+            { mel: 294.00, bass: 82.41 },
+            { mel: 262.00, bass: 82.41 },
+            { mel: 330.00, bass: 98.00 },
+            { mel: 392.00, bass: 130.81 },
+            { mel: 440.00, bass: 146.83 },
+            { mel: 392.00, bass: 130.81 },
+            { mel: 330.00, bass: 98.00 },
+            { mel: 294.00, bass: 82.41 },
+            { mel: 0, bass: 0 },
+            { mel: 392.00, bass: 130.81 }
+        ];
 
         function initAudio() {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -593,7 +642,39 @@
             else if (type === 'boss') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100, now); osc.frequency.setValueAtTime(150, now + 0.15); osc.frequency.setValueAtTime(100, now + 0.3); osc.frequency.setValueAtTime(150, now + 0.45); osc.frequency.exponentialRampToValueAtTime(20, now + 1.2); gainNode.gain.setValueAtTime(0.3, now); gainNode.gain.linearRampToValueAtTime(0, now + 1.2); osc.start(now); osc.stop(now + 1.2); }
         }
 
-        function playBGM() { if (bgmInterval || !isAudioEnabled || extinctionInProgress) return; bgmInterval = setInterval(() => { if (!audioCtx || audioCtx.state === 'suspended') return; const now = audioCtx.currentTime; const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.type = 'square'; osc.frequency.setValueAtTime(bgmNotes[bgmNoteIndex], now); gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.005, now + 0.15); osc.connect(gain); gain.connect(audioCtx.destination); osc.start(now); osc.stop(now + 0.15); bgmNoteIndex = (bgmNoteIndex + 1) % bgmNotes.length; }, 220); }
+        function scheduleOscillator(type, frequency, duration, volume, now) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(frequency, now);
+            gain.gain.setValueAtTime(volume, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + duration);
+        }
+
+        function playBGM() {
+            if (bgmInterval || !isAudioEnabled || extinctionInProgress) return;
+            bgmStepIndex = 0;
+            bgmInterval = setInterval(() => {
+                if (!audioCtx || audioCtx.state === 'suspended') return;
+                const now = audioCtx.currentTime;
+                const step = BGM_PATTERN[bgmStepIndex];
+                if (step.mel > 0) {
+                    scheduleOscillator('square', step.mel, 0.18, 0.12, now);
+                    scheduleOscillator('triangle', step.mel * 2, 0.18, 0.02, now);
+                }
+                if (step.bass > 0) {
+                    scheduleOscillator('triangle', step.bass, 0.18, 0.08, now);
+                }
+                if (Math.random() < 0.35 && step.mel > 0) {
+                    scheduleOscillator('sawtooth', step.mel * 1.5, 0.12, 0.04, now + 0.04);
+                }
+                bgmStepIndex = (bgmStepIndex + 1) % BGM_PATTERN.length;
+            }, 220);
+        }
         function stopBGM() { if (bgmInterval) { clearInterval(bgmInterval); bgmInterval = null; } }
 
         function checkExtinction() {
