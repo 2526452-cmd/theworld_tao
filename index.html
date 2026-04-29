@@ -663,14 +663,14 @@
                 const now = audioCtx.currentTime;
                 const step = BGM_PATTERN[bgmStepIndex];
                 if (step.mel > 0) {
-                    scheduleOscillator('square', step.mel, 0.18, 0.12, now);
-                    scheduleOscillator('triangle', step.mel * 2, 0.18, 0.02, now);
+                    scheduleOscillator('square', step.mel, 0.18, 0.18, now);
+                    scheduleOscillator('triangle', step.mel * 2, 0.18, 0.04, now);
                 }
                 if (step.bass > 0) {
-                    scheduleOscillator('triangle', step.bass, 0.18, 0.08, now);
+                    scheduleOscillator('triangle', step.bass, 0.18, 0.14, now);
                 }
                 if (Math.random() < 0.35 && step.mel > 0) {
-                    scheduleOscillator('sawtooth', step.mel * 1.5, 0.12, 0.04, now + 0.04);
+                    scheduleOscillator('sawtooth', step.mel * 1.5, 0.12, 0.08, now + 0.04);
                 }
                 bgmStepIndex = (bgmStepIndex + 1) % BGM_PATTERN.length;
             }, 220);
