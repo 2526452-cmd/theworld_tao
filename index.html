@@ -115,6 +115,7 @@
         button.btn-love { border-left: 4px solid var(--love-color); color: var(--love-color); font-weight: bold; background-color: #1a0011; }
         button.btn-love:hover { background-color: #330022; }
         button.btn-fly { border-left: 4px solid #66ccff; }
+        button.active-weather { background: rgba(85, 187, 255, 0.18); border-color: #55bbff; color: #fff; }
 
         .entity-info-overlay {
             position: fixed;
@@ -306,6 +307,7 @@
         <span id="stat-wild" style="color: #aaaaaa">野: 0</span>
         <span id="stat-custom" style="color: var(--custom-color)">自: 0</span>
         <span id="stat-size" style="color: var(--expand-color); margin-left: auto;">地圖: 35x18</span>
+        <span id="weather-status" style="color: #88ccff; margin-left: 1rem;">天氣：晴朗</span>
     </div>
     <div id="war-banner" class="war-banner" style="display:none;">戰雲低沉，群雄蠢蠢欲動。</div>
 
@@ -361,6 +363,7 @@
         <div class="controls">
             <button class="btn-boss" id="btn-z" onclick="spawnBoss('CHAIN_DRAGON')"><span class="hotkey">Z</span> 召喚鎖刃龍</button>
             <button class="btn-river" id="btn-c" onclick="spawnRiver()"><span class="hotkey">C</span> 生成河流</button>
+            <button class="btn-custom" id="btn-h" onclick="triggerSpecialEvent()"><span class="hotkey">H</span> 特殊事件</button>
             <button class="btn-rain" id="btn-b" onclick="triggerWeather('RAIN')"><span class="hotkey">B</span> 降雨</button>
             <button class="btn-snow" id="btn-n" onclick="triggerWeather('SNOW')"><span class="hotkey">N</span> 降雪</button>
             <button class="btn-expand" id="btn-m" onclick="expandMap()"><span class="hotkey">M</span> 擴大地圖</button>
@@ -451,6 +454,7 @@
                 case 't': flingEntities(); buttonId = 'btn-t'; break;
                 case 'z': spawnBoss('CHAIN_DRAGON'); buttonId = 'btn-z'; break;
                 case 'c': spawnRiver(); buttonId = 'btn-c'; break;
+                case 'h': triggerSpecialEvent(); buttonId = 'btn-h'; break;
                 case 'b': triggerWeather('RAIN'); buttonId = 'btn-b'; break;
                 case 'n': triggerWeather('SNOW'); buttonId = 'btn-n'; break;
                 case 'm': expandMap(); buttonId = 'btn-m'; break;
@@ -1111,14 +1115,148 @@
             drawWorld();
         }
 
-        function triggerWeather(type) { currentWeather = type; weatherTimer = 30; if (type === 'RAIN' && isPlagueActive) { isPlagueActive = false; for(let e of entities) e.isInfected = false; } drawWorld(); }
+        function updateWeatherDisplay() {
+            const rainBtn = document.getElementById('btn-b');
+            const snowBtn = document.getElementById('btn-n');
+            rainBtn.classList.toggle('active-weather', currentWeather === 'RAIN');
+            snowBtn.classList.toggle('active-weather', currentWeather === 'SNOW');
+            const status = document.getElementById('weather-status');
+            if (status) {
+                if (currentWeather === 'RAIN') status.innerText = `天氣：降雨 (${weatherTimer})`;
+                else if (currentWeather === 'SNOW') status.innerText = `天氣：降雪 (${weatherTimer})`;
+                else status.innerText = '天氣：晴朗';
+            }
+        }
+
+        function spawnWeatherEffects() {
+            if (currentWeather === 'RAIN') {
+                const dropCount = 5 + Math.floor(Math.random() * 4);
+                for (let i = 0; i < dropCount; i++) {
+                    const x = Math.floor(Math.random() * WORLD_WIDTH);
+                    const y = Math.floor(Math.random() * WORLD_HEIGHT);
+                    const char = Math.random() < 0.35 ? '滴' : '雨';
+                    effects.push({ x, y, char, color: 'var(--rain-color)', life: 1 + Math.floor(Math.random() * 2) });
+                }
+            } else if (currentWeather === 'SNOW') {
+                const flakeCount = 4 + Math.floor(Math.random() * 4);
+                for (let i = 0; i < flakeCount; i++) {
+                    const x = Math.floor(Math.random() * WORLD_WIDTH);
+                    const y = Math.floor(Math.random() * WORLD_HEIGHT);
+                    const char = Math.random() < 0.5 ? '❄' : '雪';
+                    effects.push({ x, y, char, color: 'var(--snow-color)', life: 2 + Math.floor(Math.random() * 2) });
+                }
+            }
+        }
+
+        function triggerWeather(type) {
+            currentWeather = type;
+            weatherTimer = type === 'SNOW' ? 36 : 30;
+            if (type === 'RAIN' && isPlagueActive) {
+                isPlagueActive = false;
+                for (let e of entities) e.isInfected = false;
+                addLog('天氣', '細雨洗滌了瘟疫，黑暗逐漸消散。', 'var(--rain-color)');
+            } else if (type === 'SNOW') {
+                addLog('天氣', '片片雪花覆蓋大地，世界進入寧靜的白色時刻。', 'var(--snow-color)');
+            }
+            updateWeatherDisplay();
+            drawWorld();
+        }
 
         function toggleBerserk() { isBerserkMode = !isBerserkMode; const btn = document.getElementById('btn-v'); if(isBerserkMode) { btn.classList.add('berserk-on'); btn.innerHTML = `<span class="hotkey">V</span> 狂暴: 開啟`; playSfx('boss'); } else { btn.classList.remove('berserk-on'); btn.innerHTML = `<span class="hotkey">V</span> 狂暴: 關閉`; } drawWorld(); }
+
+        function triggerSpecialEvent() {
+            if (buildings.length === 0) {
+                addLog('事件', '特殊事件未能降臨：世界目前尚無建築。', '#cccccc');
+                return;
+            }
+
+            const b = buildings[Math.floor(Math.random() * buildings.length)];
+            const raceName = b.race.name;
+            const title = b.isCapital ? '帝都奇蹟' : '聖地共鳴';
+            const effectChar = b.isCapital ? '✶' : '★';
+            const effectColor = b.isCapital ? '#ffd700' : '#aaffaa';
+            let healed = 0;
+            let spawned = 0;
+
+            for (let e of entities) {
+                if (e.race.id === b.race.id && !e.isDemon && Math.abs(e.x - b.x) + Math.abs(e.y - b.y) <= 3) {
+                    const oldHp = e.hp;
+                    e.hp = Math.min(e.maxHp, e.hp + 2);
+                    if (e.hp > oldHp) healed++;
+                    if (!e.isKing && !e.isBoss && e.level < 3 && Math.random() < 0.15) {
+                        e.level++;
+                    }
+                }
+            }
+
+            const surroundSpots = [];
+            for (let dy = -2; dy <= 2; dy++) {
+                for (let dx = -2; dx <= 2; dx++) {
+                    const tx = b.x + dx;
+                    const ty = b.y + dy;
+                    if (tx < 0 || tx >= WORLD_WIDTH || ty < 0 || ty >= WORLD_HEIGHT) continue;
+                    if (!getEntityAt(tx, ty) && !getBuildingAt(tx, ty) && !getRiverAt(tx, ty)) {
+                        surroundSpots.push({ x: tx, y: ty });
+                    }
+                }
+            }
+
+            const spawnLimit = Math.min(2, surroundSpots.length);
+            for (let i = 0; i < spawnLimit; i++) {
+                const spotIndex = Math.floor(Math.random() * surroundSpots.length);
+                const spot = surroundSpots.splice(spotIndex, 1)[0];
+                entities.push({
+                    race: b.race,
+                    level: 0,
+                    hp: 2,
+                    maxHp: 2,
+                    baseDmg: 0,
+                    weapon: null,
+                    x: spot.x,
+                    y: spot.y,
+                    age: 0,
+                    isNeutral: false,
+                    isSuperNeutral: false,
+                    isCustom: false,
+                    id: Math.random().toString()
+                });
+                spawned++;
+            }
+
+            if (b.isCapital) {
+                b.hp = Math.min(b.hp + 3, 30);
+            }
+
+            for (let i = 0; i < 8; i++) {
+                const tx = Math.max(0, Math.min(WORLD_WIDTH - 1, b.x + Math.floor(Math.random() * 5) - 2));
+                const ty = Math.max(0, Math.min(WORLD_HEIGHT - 1, b.y + Math.floor(Math.random() * 5) - 2));
+                effects.push({ x: tx, y: ty, char: effectChar, color: effectColor, life: 3 });
+            }
+
+            addLog('事件', `【${raceName}】${title}降臨，${healed} 位生物獲得滋養，${spawned} 位新人亮相。`, effectColor);
+            playSfx('boss');
+            updateStats();
+            drawWorld();
+        }
 
         function getEntityAt(x, y) { return entities.find(e => e.x === x && e.y === y); }
         function getBuildingAt(x, y) { return buildings.find(b => b.x === x && b.y === y); }
         function getItemAt(x, y) { return items.find(i => i.x === x && i.y === y); }
         function getRiverAt(x, y) { return rivers.find(r => r.x === x && r.y === y); }
+
+        function findNearestBuilding(entity, raceId, maxRange = 6) {
+            let best = null;
+            let bestDist = Infinity;
+            for (let b of buildings) {
+                if (raceId && b.race.id !== raceId) continue;
+                const dist = Math.abs(b.x - entity.x) + Math.abs(b.y - entity.y);
+                if (dist < bestDist && dist <= maxRange) {
+                    bestDist = dist;
+                    best = b;
+                }
+            }
+            return best;
+        }
 
         function applyDamage(entity, amount) {
             entity.hp -= amount;
@@ -1184,7 +1322,8 @@
             let wildCount = entities.filter(e => e.isNeutral).length; if (wildCount < 25 && Math.random() < 0.2) spawnNeutral();
 
             effects = effects.filter(ef => { ef.life -= 1; return ef.life > 0; });
-            if (weatherTimer > 0) { weatherTimer--; if(weatherTimer===0) currentWeather='NONE'; }
+            spawnWeatherEffects();
+            if (weatherTimer > 0) { weatherTimer--; if(weatherTimer===0) { currentWeather='NONE'; updateWeatherDisplay(); } }
 
             let shuffledEntities = [...entities].sort(() => Math.random() - 0.5);
             let toRemove = new Set(); let activeInfections = 0;
@@ -1354,6 +1493,19 @@
                             dy = seekTarget.y > e.y ? 1 : (seekTarget.y < e.y ? -1 : 0);
                             if (Math.random() < 0.2) dx = Math.floor(Math.random() * 3) - 1;
                             if (Math.random() < 0.2) dy = Math.floor(Math.random() * 3) - 1;
+                        }
+                    }
+
+                    if (!e.isNeutral && !e.isBoss && !e.isDemon) {
+                        const targetBuilding = findNearestBuilding(e, e.race.id, 6);
+                        if (targetBuilding && Math.random() < 0.65) {
+                            const buildingDist = Math.abs(targetBuilding.x - e.x) + Math.abs(targetBuilding.y - e.y);
+                            if (buildingDist > 1) {
+                                dx = targetBuilding.x > e.x ? 1 : (targetBuilding.x < e.x ? -1 : 0);
+                                dy = targetBuilding.y > e.y ? 1 : (targetBuilding.y < e.y ? -1 : 0);
+                                if (Math.random() < 0.25) dx = Math.floor(Math.random() * 3) - 1;
+                                if (Math.random() < 0.25) dy = Math.floor(Math.random() * 3) - 1;
+                            }
                         }
                     }
 
@@ -1534,10 +1686,28 @@
             for (let y = 0; y < WORLD_HEIGHT; y++) {
                 for (let x = 0; x < WORLD_WIDTH; x++) {
                     let cell = domGrid[y][x]; cell.innerText = EMPTY_CHAR;
-                    cell.style.color = 'var(--text-color)'; cell.style.backgroundColor = 'transparent';
-                    cell.style.textDecoration = 'none'; cell.style.outline = 'none'; cell.style.boxShadow = 'none'; cell.style.zIndex = '0';
-                    cell.className = 'cell'; cell.style.fontWeight = 'normal'; cell.style.textShadow = 'none';
-                    cell.style.fontSize = ''; cell.style.lineHeight = ''; cell.style.transform = 'none';
+                    cell.style.color = 'var(--text-color)';
+                    cell.style.backgroundColor = 'transparent';
+                    cell.style.textDecoration = 'none';
+                    cell.style.outline = 'none';
+                    cell.style.boxShadow = 'none';
+                    cell.style.zIndex = '0';
+                    cell.className = 'cell';
+                    cell.style.fontWeight = 'normal';
+                    cell.style.textShadow = 'none';
+                    cell.style.fontSize = '';
+                    cell.style.lineHeight = '';
+                    cell.style.transform = 'none';
+                }
+            }
+
+            if (currentWeather === 'RAIN' || currentWeather === 'SNOW') {
+                const overlay = currentWeather === 'RAIN' ? 'rgba(30, 60, 100, 0.10)' : 'rgba(255, 255, 255, 0.10)';
+                for (let y = 0; y < WORLD_HEIGHT; y++) {
+                    for (let x = 0; x < WORLD_WIDTH; x++) {
+                        const cell = domGrid[y][x];
+                        if (cell.style.backgroundColor === 'transparent') cell.style.backgroundColor = overlay;
+                    }
                 }
             }
 
@@ -1618,6 +1788,7 @@
                     }
                 }
             }
+            updateWeatherDisplay();
         }
 
         function updateStats() {
